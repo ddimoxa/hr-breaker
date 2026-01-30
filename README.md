@@ -62,6 +62,9 @@ uv run hr-breaker optimize resume.txt job.txt
 # Debug mode (saves iterations)
 uv run hr-breaker optimize resume.txt job.txt -d
 
+# Lenient mode - relaxes content constraints but still prevents fabricating experience. Use with caution!
+uv run hr-breaker optimize resume.txt job.txt --no-shame
+
 # List generated PDFs
 uv run hr-breaker list
 ```
@@ -74,17 +77,7 @@ uv run hr-breaker list
 
 ## Configuration
 
-Copy `.env.example` to `.env` and set your API key. All other settings have sensible defaults.
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `GOOGLE_API_KEY` | Yes | Google Gemini API key |
-| `GEMINI_PRO_MODEL` | No | Model for complex tasks (default: `gemini-3-pro-preview`) |
-| `GEMINI_FLASH_MODEL` | No | Model for simple tasks (default: `gemini-3-flash-preview`) |
-| `GEMINI_THINKING_BUDGET` | No | Thinking tokens budget (default: 8192) |
-| `MAX_ITERATIONS` | No | Optimization loop limit (default: 5) |
-
-See `.env.example` for all available options (filter thresholds, scraper settings, etc.)
+Copy `.env.example` to `.env` and set `GOOGLE_API_KEY` (required). See `.env.example` for all available options.
 
 ---
 
@@ -102,16 +95,15 @@ src/hr_breaker/
 └── cli.py           # Click CLI
 ```
 
-**Agents**: job_parser, optimizer, combined_reviewer, name_extractor, hallucination_detector, ai_generated_detector
-
 **Filters** (run by priority):
-0. ContentLengthChecker - Pre-render size check
-1. DataValidator - HTML structure validation
-3. HallucinationChecker - Detect fabrications
-4. KeywordMatcher - TF-IDF matching
-5. LLMChecker - ATS simulation
-6. VectorSimilarityMatcher - Semantic similarity
-7. AIGeneratedChecker - Detect AI-sounding text
+
+- 0: ContentLengthChecker - Size check
+- 1: DataValidator - HTML structure validation
+- 3: HallucinationChecker - Detect fabricated claims not supported by original resume
+- 4: KeywordMatcher - TF-IDF matching
+- 5: LLMChecker - Visual formatting check and LLM-based ATS simulation
+- 6: VectorSimilarityMatcher - Semantic similarity
+- 7: AIGeneratedChecker - Detect AI-sounding text
 
 ## Development
 

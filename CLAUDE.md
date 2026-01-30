@@ -70,9 +70,9 @@ Filters run by priority (lower first). Default: parallel execution. Use `--seq` 
 
 | Priority | Filter | Purpose |
 |----------|--------|---------|
-| 0 | ContentLengthChecker | Pre-render size check (≤1 page) |
+| 0 | ContentLengthChecker | Pre-render size check (fits in one page) |
 | 1 | DataValidator | Validate HTML structure |
-| 3 | HallucinationChecker | Detect fabrications |
+| 3 | HallucinationChecker | Detect fabricated claims not supported by original resume |
 | 4 | KeywordMatcher | TF-IDF keyword matching |
 | 5 | LLMChecker | Combined vision + ATS simulation |
 | 6 | VectorSimilarityMatcher | Gemini embedding similarity |
@@ -82,7 +82,7 @@ To add filter: subclass `BaseFilter`, set `name` and `priority`, use `@FilterReg
 
 ### Services
 - `renderer.py` - HTMLRenderer (WeasyPrint)
-- `job_scraper.py` - Scrape job URLs (httpx → Wayback → Playwright fallback)
+- `job_scraper.py` - Scrape job URLs (httpx → Wayback → Playwright fallback). 
 - `pdf_parser.py` - Extract text from PDF
 - `cache.py` - Resume caching
 - `pdf_storage.py` - Save/list generated PDFs
@@ -97,6 +97,7 @@ uv run streamlit run src/hr_breaker/main.py
 uv run hr-breaker optimize resume.txt https://example.com/job
 uv run hr-breaker optimize resume.txt job.txt -d              # debug mode
 uv run hr-breaker optimize resume.txt job.txt --seq           # sequential filters (early exit)
+uv run hr-breaker optimize resume.txt job.txt --no-shame      # massively relax lies/hallucination/AI checks (use with caution!)
 uv run hr-breaker list                                        # list generated PDFs
 
 # Tests
@@ -112,3 +113,8 @@ uv run pytest tests/
 - LLM generates HTML body → WeasyPrint renders to PDF
 - Templates in `templates/` (resume_wrapper.html, resume_guide.md)
 - Name extraction uses LLM - handles any input format
+
+### Environment Variables
+
+See config options in `.env.example` and `config.py`
+
