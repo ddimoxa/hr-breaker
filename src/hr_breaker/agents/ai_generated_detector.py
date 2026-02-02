@@ -3,8 +3,9 @@ from datetime import date
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
-from hr_breaker.config import get_model_settings, get_settings
+from hr_breaker.config import get_model_settings
 from hr_breaker.models import FilterResult, OptimizedResume
+from hr_breaker.provider import get_agent_model
 
 
 class AIGeneratedResult(BaseModel):
@@ -69,9 +70,8 @@ When listing indicators, quote specific problematic text.
 
 
 def get_ai_generated_agent() -> Agent:
-    settings = get_settings()
     agent = Agent(
-        f"google-gla:{settings.gemini_flash_model}",
+        get_agent_model(),
         output_type=AIGeneratedResult,
         system_prompt=SYSTEM_PROMPT,
         model_settings=get_model_settings(),

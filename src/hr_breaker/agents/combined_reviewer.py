@@ -3,10 +3,11 @@ from functools import lru_cache
 
 import fitz
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, BinaryContent
+from pydantic_ai import Agent, BinaryContent, PromptedOutput
 
-from hr_breaker.config import get_model_settings, get_settings
+from hr_breaker.config import get_model_settings
 from hr_breaker.models import JobPosting, OptimizedResume
+from hr_breaker.provider import get_vision_model
 from hr_breaker.services.renderer import get_renderer, RenderError
 
 
@@ -138,12 +139,13 @@ Return ALL fields:
 
 @lru_cache
 def get_combined_reviewer_agent() -> Agent:
-    settings = get_settings()
     agent = Agent(
-        f"google-gla:{settings.gemini_flash_model}",
-        output_type=CombinedReviewResult,
-        system_prompt=SYSTEM_PROMPT,
+        get_vision_model(),
+        output_type=PromptedOutput(CombinedReviewResult),
+        system_prompt=SYSTEM_PROMPT
+        + "\nIMPORTANT: Return ONLY a JSON object matching the requested schema.",
         model_settings=get_model_settings(),
+        retries=5,
     )
 
     @agent.system_prompt

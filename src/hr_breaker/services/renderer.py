@@ -62,6 +62,7 @@ class HTMLRenderer(BaseRenderer):
             autoescape=True,
         )
         from weasyprint.text.fonts import FontConfiguration
+
         self.font_config = FontConfiguration()
         self._wrapper_html = (TEMPLATE_DIR / "resume_wrapper.html").read_text()
 
@@ -77,9 +78,18 @@ class HTMLRenderer(BaseRenderer):
         try:
             # Import WeasyPrint - this will fail if libs not found
             import weasyprint  # noqa: F401
+
             cls._weasyprint_imported = True
         except OSError as e:
-            if "libgobject" in str(e) or "libpango" in str(e):
+            if "libgobject" in str(e) or "libpango" in str(e) or "error 0x7e" in str(e):
+                if sys.platform == "win32":
+                    raise RenderError(
+                        "WeasyPrint libraries not found. Please install the GTK3 runtime:\n"
+                        "1. Download from: https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer/releases\n"
+                        "2. Install and ensure 'Set up PATH environment variable' is CHECKED.\n"
+                        "3. Restart your terminal."
+                    ) from e
+
                 raise RenderError(
                     "WeasyPrint libraries not found. On macOS, run:\n"
                     "  brew install pango gdk-pixbuf libffi\n"
@@ -127,7 +137,9 @@ class HTMLRenderer(BaseRenderer):
         css_path = TEMPLATE_DIR / "resume.css"
         stylesheets = []
         if css_path.exists():
-            stylesheets.append(CSS(filename=str(css_path), font_config=self.font_config))
+            stylesheets.append(
+                CSS(filename=str(css_path), font_config=self.font_config)
+            )
 
         doc = html.render(stylesheets=stylesheets, font_config=self.font_config)
         pdf_bytes = doc.write_pdf()

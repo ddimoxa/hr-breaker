@@ -18,7 +18,7 @@ Resume optimization tool that transforms any resume into a job-specific, ATS-fri
 
 ## How It Works
 
-1. Upload resume in any text format (content source only)
+1. Upload resume in any supported format (PDF, LaTeX, markdown, txt)
 2. Provide job posting URL or text description
 3. LLM extracts content and generates optimized HTML resume
 4. System runs internal filters (ATS simulation, keyword matching, hallucination detection)
@@ -30,6 +30,10 @@ Resume optimization tool that transforms any resume into a job-specific, ATS-fri
 ```bash
 # Install
 uv sync
+
+# Windows-specific: Install GTK3 runtime (Required for PDF generation)
+# 1. Download installer: https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer/releases
+# 2. Run installer and ensure "Set up PATH environment variable" is CHECKED
 
 # Configure
 cp .env.example .env
@@ -54,7 +58,7 @@ Launch with `uv run streamlit run src/hr_breaker/main.py`
 
 ```bash
 # From URL
-uv run hr-breaker optimize resume.txt https://example.com/job
+uv run hr-breaker optimize resume.pdf https://example.com/job
 
 # From job description file
 uv run hr-breaker optimize resume.txt job.txt

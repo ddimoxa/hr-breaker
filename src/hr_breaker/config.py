@@ -35,6 +35,16 @@ class Settings(BaseModel):
     gemini_pro_model: str = "gemini-3-pro-preview"
     gemini_flash_model: str = "gemini-3-flash-preview"
     gemini_thinking_budget: int | None = 8192
+
+    # OpenAI / Compatible settings
+    llm_provider: str = "google"
+    openai_api_key: str = ""
+    openai_base_url: str | None = None
+    openai_model: str = "gpt-4o"
+    openai_flash_model: str = "gpt-4o-mini"
+    openai_vision_model: str = "gpt-4o"
+    openai_thinking_budget: int | None = None
+    openai_provider_name: str = "openai"
     cache_dir: Path = Path(".cache/resumes")
     output_dir: Path = Path("output")
     max_iterations: int = 5
@@ -85,6 +95,14 @@ def get_settings() -> Settings:
         gemini_pro_model=os.getenv("GEMINI_PRO_MODEL") or "gemini-3-pro-preview",
         gemini_flash_model=os.getenv("GEMINI_FLASH_MODEL") or "gemini-3-flash-preview",
         gemini_thinking_budget=thinking_budget,
+        llm_provider=os.getenv("LLM_PROVIDER", "google").lower(),
+        openai_api_key=os.getenv("OPENAI_API_KEY", ""),
+        openai_base_url=os.getenv("OPENAI_BASE_URL"),
+        openai_model=os.getenv("OPENAI_MODEL", "gpt-4o"),
+        openai_flash_model=os.getenv("OPENAI_FLASH_MODEL", "gpt-4o-mini"),
+        openai_vision_model=os.getenv("OPENAI_VISION_MODEL", "gpt-4o"),
+        openai_thinking_budget=int(os.getenv("OPENAI_THINKING_BUDGET", "0")) or None,
+        openai_provider_name=os.getenv("OPENAI_PROVIDER_NAME", "openai"),
         fast_mode=os.getenv("HR_BREAKER_FAST_MODE", "true").lower()
         in ("true", "1", "yes"),
         # Scraper settings
