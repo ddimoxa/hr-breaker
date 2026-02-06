@@ -1,5 +1,4 @@
 from datetime import date
-from functools import lru_cache
 
 import fitz
 from pydantic import BaseModel, Field
@@ -137,7 +136,6 @@ Return ALL fields:
 """
 
 
-@lru_cache
 def get_combined_reviewer_agent() -> Agent:
     agent = Agent(
         get_vision_model(),

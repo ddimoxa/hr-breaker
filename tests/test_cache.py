@@ -1,8 +1,5 @@
 """Tests for resume cache service."""
 
-import json
-import pytest
-from pathlib import Path
 from unittest.mock import patch
 
 from hr_breaker.services.cache import ResumeCache

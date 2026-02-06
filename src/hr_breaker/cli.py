@@ -99,7 +99,7 @@ def optimize(
                 debug_pdf.write_bytes(optimized.pdf_bytes)
                 click.echo(f"    Debug: saved {debug_pdf}")
             else:
-                click.echo(f"    Debug: no PDF (render failed)")
+                click.echo("    Debug: no PDF (render failed)")
 
     # Run all async work in single event loop
     async def run_optimization():
@@ -198,7 +198,7 @@ def _get_job_text(job_input: str) -> str:
         try:
             return scrape_job_posting(job_input)
         except CloudflareBlockedError:
-            click.echo(f"Site has bot protection. Opening in browser...")
+            click.echo("Site has bot protection. Opening in browser...")
             click.launch(job_input)
             click.echo("Please copy the job description and paste below.")
             click.echo("(Press Enter twice when done)")

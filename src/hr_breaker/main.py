@@ -7,15 +7,9 @@ from pathlib import Path
 import nest_asyncio
 import streamlit as st
 
-nest_asyncio.apply()
-
-# Event loop setup
-if "event_loop" not in st.session_state:
-    st.session_state.event_loop = asyncio.new_event_loop()
-asyncio.set_event_loop(st.session_state.event_loop)
-
 from hr_breaker.agents import extract_name, parse_job_posting
 from hr_breaker.config import get_settings
+from hr_breaker.config_manager import ConfigManager
 from hr_breaker.models import GeneratedPDF, ResumeSource, ValidationResult
 from hr_breaker.orchestration import optimize_for_job
 from hr_breaker.services import (
@@ -25,6 +19,13 @@ from hr_breaker.services import (
     CloudflareBlockedError,
 )
 from hr_breaker.services.pdf_parser import extract_text_from_pdf
+
+nest_asyncio.apply()
+
+# Event loop setup
+if "event_loop" not in st.session_state:
+    st.session_state.event_loop = asyncio.new_event_loop()
+asyncio.set_event_loop(st.session_state.event_loop)
 
 # Initialize services
 cache = ResumeCache()
@@ -78,6 +79,184 @@ def display_filter_results(validation: ValidationResult):
 # Sidebar - Options & History
 with st.sidebar:
     # Options section
+    # Model Configuration
+    config_manager = ConfigManager()
+
+    # Auto-fetch models on startup if we have a base_url and haven't fetched yet
+    if (
+        "available_models" not in st.session_state
+        and settings.openai_base_url
+        and settings.llm_provider == "openai"
+    ):
+        with st.spinner("Initializing models..."):
+            models = ConfigManager.fetch_available_models(
+                settings.openai_base_url, settings.openai_api_key
+            )
+            if models:
+                st.session_state["available_models"] = models
+
+    with st.expander("Model Configuration", expanded=False):
+        current_provider = st.selectbox(
+            "LLM Provider",
+            ["google", "openai"],
+            index=0 if settings.llm_provider == "google" else 1,
+            key="cfg_provider",
+        )
+
+        # Determine initial values
+        init_base_url = settings.openai_base_url or "http://localhost:11434/v1"
+        init_api_key = settings.openai_api_key or ""
+
+        base_url = st.text_input(
+            "Base URL",
+            value=init_base_url,
+            key="cfg_base_url",
+            help="e.g. http://localhost:11434/v1 for Ollama",
+        )
+        api_key = st.text_input(
+            "API Key", value=init_api_key, type="password", key="cfg_api_key"
+        )
+
+        # Connect & Fetch Models
+        if st.button("Connect & Fetch Models"):
+            with st.spinner("Fetching models..."):
+                models = ConfigManager.fetch_available_models(base_url, api_key)
+                if models:
+                    st.session_state["available_models"] = models
+                    st.success(f"Found {len(models)} models")
+                else:
+                    st.error("No models found or connection failed")
+
+        available_models = st.session_state.get("available_models", [])
+
+        # Filtering Heuristics
+        vision_keywords = [
+            "vision",
+            "vl",
+            "ocr",
+            "llava",
+            "moondream",
+            "minicpm",
+            "pixtral",
+            "gpt-4o",
+            "gemini-1.5",
+            "claude-3",
+        ]
+        large_keywords = [
+            "14b",
+            "27b",
+            "30b",
+            "32b",
+            "34b",
+            "70b",
+            "r1",
+            "o1",
+            "gpt-4",
+            "pro",
+            "opus",
+            "13b",
+        ]
+        small_keywords = [
+            "flash",
+            "mini",
+            "haiku",
+            "0.5b",
+            "1b",
+            "1.5b",
+            "3b",
+            "4b",
+            "7b",
+            "8b",
+        ]
+
+        def filter_models(models, keywords, exclude=None):
+            if not models:
+                return []
+            filtered = [
+                m
+                for m in models
+                if any(k in m.lower() for k in keywords)
+                and (not exclude or not any(e in m.lower() for e in exclude))
+            ]
+            # If filtering resulted in empty list, return all models as fallback
+            return filtered if filtered else models
+
+        def get_index(model_list, target):
+            try:
+                return model_list.index(target)
+            except ValueError:
+                return 0
+
+        # Optimizer Model (Smart/Complex)
+        opt_candidates = filter_models(
+            available_models, large_keywords, exclude=["whisper", "embed"]
+        )
+        if available_models:
+            optimizer_model = st.selectbox(
+                "Optimizer Model (Smart)",
+                opt_candidates,
+                index=get_index(opt_candidates, settings.openai_model),
+                help="Sophisticated model for resume content generation (e.g. Qwen 14B+, DeepSeek R1)",
+                key="cfg_opt_model",
+            )
+        else:
+            optimizer_model = st.text_input(
+                "Optimizer Model", value=settings.openai_model, key="cfg_opt_model_text"
+            )
+
+        # Flash Model (Fast/Simple)
+        flash_candidates = filter_models(
+            available_models, small_keywords, exclude=["whisper", "embed"]
+        )
+        if available_models:
+            flash_model = st.selectbox(
+                "Fast/Flash Model",
+                flash_candidates,
+                index=get_index(flash_candidates, settings.openai_flash_model),
+                help="Small, fast model for parsing and name extraction (e.g. Llama 3.2 3B)",
+                key="cfg_flash_model",
+            )
+        else:
+            flash_model = st.text_input(
+                "Fast/Flash Model",
+                value=settings.openai_flash_model,
+                key="cfg_flash_model_text",
+            )
+
+        # Vision Model (Image Parsing)
+        vision_candidates = filter_models(
+            available_models, vision_keywords, exclude=["whisper", "embed"]
+        )
+        if available_models:
+            vision_model = st.selectbox(
+                "Vision Model (Layout Review)",
+                vision_candidates,
+                index=get_index(vision_candidates, settings.openai_vision_model),
+                help="Model capable of analyzing the rendered PDF image (e.g. Llama 3.2 Vision)",
+                key="cfg_vision_model",
+            )
+        else:
+            vision_model = st.text_input(
+                "Vision Model",
+                value=settings.openai_vision_model,
+                key="cfg_vision_model_text",
+            )
+
+        if st.button("Save Configuration", type="primary"):
+            new_config = {
+                "LLM_PROVIDER": current_provider,
+                "OPENAI_BASE_URL": base_url,
+                "OPENAI_API_KEY": api_key,
+                "OPENAI_MODEL": optimizer_model,
+                "OPENAI_FLASH_MODEL": flash_model,
+                "OPENAI_VISION_MODEL": vision_model,
+            }
+            config_manager.save_config(new_config)
+            config_manager.apply_to_environ()
+            get_settings.cache_clear()
+            st.success("Configuration saved!")
+            st.rerun()
+
     st.markdown("**Options**")
     sequential_mode = st.checkbox(
         "Sequential", value=False, help="Run filters sequentially with early exit"

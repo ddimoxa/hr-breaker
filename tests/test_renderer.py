@@ -11,9 +11,7 @@ from hr_breaker.models.resume_data import (
     Project,
 )
 from hr_breaker.services.renderer import (
-    BaseRenderer,
     HTMLRenderer,
-    RenderError,
     get_renderer,
 )
 

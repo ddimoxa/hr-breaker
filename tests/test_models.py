@@ -10,8 +10,6 @@ from hr_breaker.models import (
 from hr_breaker.models.resume_data import (
     ResumeData,
     ContactInfo,
-    Experience,
-    Education,
 )
 
 

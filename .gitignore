@@ -46,4 +46,7 @@ output/
 .DS_Store
 Thumbs.db
 
-
+# User Files
+CV.pdf
+job.txt
+.user_config.json

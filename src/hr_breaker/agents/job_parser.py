@@ -1,4 +1,3 @@
-from functools import lru_cache
 from pydantic_ai import Agent, PromptedOutput
 
 from hr_breaker.config import get_model_settings
@@ -28,7 +27,6 @@ Be thorough in extracting keywords - include all technologies, tools, frameworks
 """
 
 
-@lru_cache
 def get_job_parser_agent() -> Agent:
     return Agent(
         get_flash_model(),

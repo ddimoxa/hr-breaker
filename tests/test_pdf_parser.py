@@ -1,7 +1,5 @@
 """Tests for PDF text extraction."""
 
-import tempfile
-from pathlib import Path
 
 import pytest
 

@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.3] - 2026-02-06
+
+### Added
+
+- **Model Configuration UI**: Added sidebar controls to configure LLM provider (Google/OpenAI), base URL, and API keys directly in the interface.
+- **Config Persistence**: Settings are now saved to `.user_config.json` and persist across sessions.
+- **Git Ignore**: Added `CV.pdf`, `job.txt`, and `.user_config.json` to `.gitignore`.
+
+### Changed
+
+- **Async Handling**: Improved event loop management in `main.py` for Streamlit compatibility.
+- **Cleanup**: Removed unused `lru_cache` decorators and unused imports across multiple files (`combined_reviewer.py`, `job_parser.py`, tests).
+- **CLI**: Fixed f-string formatting in `cli.py`.
+
 ## [0.1.2] - 2026-02-02
 
 ### Fixed

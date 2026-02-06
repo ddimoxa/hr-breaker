@@ -7,7 +7,13 @@ from typing import Any
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-load_dotenv()
+from hr_breaker.config_manager import ConfigManager
+
+load_dotenv(override=True)
+
+# Load persistent config into environment
+config_manager = ConfigManager()
+config_manager.apply_to_environ()
 
 
 def setup_logging() -> logging.Logger:

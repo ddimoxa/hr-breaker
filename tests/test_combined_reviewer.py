@@ -1,7 +1,7 @@
 """Tests for combined reviewer agent and LLMChecker filter."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from hr_breaker.agents.combined_reviewer import (
     SCORE_WEIGHTS,
