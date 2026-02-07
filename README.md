@@ -31,17 +31,30 @@ Resume optimization tool that transforms any resume into a job-specific, ATS-fri
 # Install
 uv sync
 
-# Windows-specific: Install GTK3 runtime (Required for PDF generation)
-# 1. Download installer: https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer/releases
-# 2. Run installer and ensure "Set up PATH environment variable" is CHECKED
-
-# Configure
+# Configure (non-secret settings)
 cp .env.example .env
-# Edit .env and add your GOOGLE_API_KEY
 
-# Run web UI
+# Configure (secrets: OpenAI keys; this file is gitignored)
+cp .env.openai_keys.example .env.openai_keys
+# Edit .env.openai_keys and set one of:
+# - OPENAI_API_KEYS=sk-...,sk-...
+# - OPENAI_API_KEY=sk-...
+# - OPENAI_API_KEY_1=sk-... (+ OPENAI_API_KEY_2, ...)
+
+# Run Web UI
 uv run streamlit run src/hr_breaker/main.py
 ```
+
+### PDF Rendering Prereqs (WeasyPrint)
+
+HR-Breaker renders HTML to PDF via WeasyPrint.
+
+- macOS (Homebrew):
+  - `brew install pango gdk-pixbuf libffi`
+  - Then run with: `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib uv run streamlit run src/hr_breaker/main.py`
+- Windows:
+  - Install GTK3 runtime from https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer/releases
+  - Ensure "Set up PATH environment variable" is checked during install.
 
 ## Docker
 
@@ -50,7 +63,8 @@ uv run streamlit run src/hr_breaker/main.py
 ```bash
 # 1) Configure
 cp .env.example .env
-# edit .env and add your GOOGLE_API_KEY (or OpenAI settings)
+cp .env.openai_keys.example .env.openai_keys
+# Edit .env.openai_keys and set your OpenAI key(s)
 
 # 2) Build
 docker compose build
@@ -65,7 +79,7 @@ Open http://localhost:8501
 
 ```bash
 docker build -t hr-breaker .
-docker run --rm -p 8501:8501 --env-file .env \
+docker run --rm -p 8501:8501 --env-file .env --env-file .env.openai_keys \
   -v "$(pwd)/output:/app/output" \
   -v "$(pwd)/.cache:/app/.cache" \
   hr-breaker
@@ -109,7 +123,22 @@ uv run hr-breaker list
 
 ## Configuration
 
-Copy `.env.example` to `.env` and set `GOOGLE_API_KEY` (required). See `.env.example` for all available options.
+This branch uses OpenAI (or OpenAI-compatible) models.
+
+- Non-secret config: copy `.env.example` to `.env` and override what you need (models, base URL, etc.).
+- Secrets: copy `.env.openai_keys.example` to `.env.openai_keys` and set your OpenAI key(s).
+
+Supported key formats:
+
+- `OPENAI_API_KEYS="k1,k2,k3"` (comma/space/newline separated)
+- `OPENAI_API_KEY="k1"` (single key fallback)
+- `OPENAI_API_KEY_1`, `OPENAI_API_KEY_2`, ... (ordered)
+
+Optional UI auth (useful for deployments):
+
+- `HR_BREAKER_AUTH_ENABLED=true`
+- `HR_BREAKER_AUTH_USERNAME=...`
+- `HR_BREAKER_AUTH_PASSWORD=...`
 
 ---
 
