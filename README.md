@@ -43,6 +43,34 @@ cp .env.example .env
 uv run streamlit run src/hr_breaker/main.py
 ```
 
+## Docker
+
+### Web UI (recommended)
+
+```bash
+# 1) Configure
+cp .env.example .env
+# edit .env and add your GOOGLE_API_KEY (or OpenAI settings)
+
+# 2) Build
+docker compose build
+
+# 3) Run
+docker compose up
+```
+
+Open http://localhost:8501
+
+### One-off run (no compose)
+
+```bash
+docker build -t hr-breaker .
+docker run --rm -p 8501:8501 --env-file .env \
+  -v "$(pwd)/output:/app/output" \
+  -v "$(pwd)/.cache:/app/.cache" \
+  hr-breaker
+```
+
 ## Usage
 
 ### Web UI

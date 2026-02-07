@@ -1,15 +1,15 @@
-from google import genai
-from google.genai import types
+import asyncio
 
 from hr_breaker.config import get_settings
 from hr_breaker.filters.base import BaseFilter
 from hr_breaker.filters.registry import FilterRegistry
 from hr_breaker.models import FilterResult, JobPosting, OptimizedResume, ResumeSource
+from hr_breaker.openai_keys import get_openai_api_keys
 
 
 @FilterRegistry.register
 class VectorSimilarityMatcher(BaseFilter):
-    """Vector similarity filter using Google Gemini embeddings."""
+    """Vector similarity filter using OpenAI (or OpenAI-compatible) embeddings."""
 
     name = "VectorSimilarityMatcher"
     priority = 6
@@ -36,82 +36,63 @@ class VectorSimilarityMatcher(BaseFilter):
                 suggestions=["Ensure PDF compilation succeeds"],
             )
 
-        if not settings.google_api_key:
-            # Fallback to local Ollama embeddings if available
-            if settings.openai_base_url and "localhost" in settings.openai_base_url:
-                try:
-                    from openai import AsyncOpenAI
+        resume_text = optimized.pdf_text
+        job_text = f"{job.title} {job.description} {' '.join(job.requirements)}"
 
-                    client = AsyncOpenAI(
-                        base_url=settings.openai_base_url, api_key="ollama"
-                    )
+        # Prefer OpenAI keys. For local OpenAI-compatible servers (Ollama),
+        # allow a placeholder key and use a local embedding model.
+        api_keys = get_openai_api_keys()
+        is_local = bool(settings.openai_base_url and "localhost" in settings.openai_base_url)
 
-                    resume_text = optimized.pdf_text
-                    job_text = (
-                        f"{job.title} {job.description} {' '.join(job.requirements)}"
-                    )
+        embed_model = settings.openai_embedding_model
+        embed_dimensions = settings.openai_embedding_dimensions
+        if is_local:
+            embed_model = "nomic-embed-text"
+            embed_dimensions = None
+            api_keys = ["ollama"]
 
-                    # Get embeddings in parallel
-                    import asyncio
+        if not api_keys:
+            return FilterResult(
+                filter_name=self.name,
+                passed=True,
+                score=1.0,
+                threshold=self.threshold,
+                issues=["Skipped: No OpenAI API keys provided"],
+                suggestions=["Set OPENAI_API_KEYS / OPENAI_API_KEY in .env.openai_keys"],
+            )
 
-                    # Use nomic-embed-text which is standard for local RAG
-                    model = "nomic-embed-text"
+        last_err: Exception | None = None
+        embeddings: list[list[float]] | None = None
 
-                    e1_resp, e2_resp = await asyncio.gather(
-                        client.embeddings.create(input=resume_text, model=model),
-                        client.embeddings.create(input=job_text, model=model),
-                    )
-
-                    embeddings = [e1_resp.data[0].embedding, e2_resp.data[0].embedding]
-
-                except Exception as e:
-                    return FilterResult(
-                        filter_name=self.name,
-                        passed=True,
-                        score=1.0,
-                        threshold=self.threshold,
-                        issues=[
-                            f"Skipped: No Google API key and local fallback failed: {e}"
-                        ],
-                        suggestions=[
-                            "Add GOOGLE_API_KEY to .env to enable semantic matching"
-                        ],
-                    )
-            else:
-                return FilterResult(
-                    filter_name=self.name,
-                    passed=True,
-                    score=1.0,
-                    threshold=self.threshold,
-                    issues=["Skipped: No Google API key provided"],
-                    suggestions=[
-                        "Add GOOGLE_API_KEY to .env to enable semantic matching"
-                    ],
-                )
-        else:
-            client = genai.Client(api_key=settings.google_api_key)
-            resume_text = optimized.pdf_text
-            job_text = f"{job.title} {job.description} {' '.join(job.requirements)}"
-
+        for key in api_keys:
             try:
-                result = client.models.embed_content(
-                    model=settings.embedding_model,
-                    contents=[resume_text, job_text],
-                    config=types.EmbedContentConfig(
-                        task_type="SEMANTIC_SIMILARITY",
-                        output_dimensionality=settings.embedding_output_dimensionality,
-                    ),
+                from openai import AsyncOpenAI
+
+                client = AsyncOpenAI(api_key=key, base_url=settings.openai_base_url)
+
+                kwargs = {"model": embed_model}
+                if embed_dimensions is not None:
+                    kwargs["dimensions"] = embed_dimensions
+
+                e1_resp, e2_resp = await asyncio.gather(
+                    client.embeddings.create(input=resume_text, **kwargs),
+                    client.embeddings.create(input=job_text, **kwargs),
                 )
-                embeddings = [emb.values for emb in result.embeddings]
+                embeddings = [e1_resp.data[0].embedding, e2_resp.data[0].embedding]
+                break
             except Exception as e:
-                return FilterResult(
-                    filter_name=self.name,
-                    passed=True,
-                    score=1.0,
-                    threshold=self.threshold,
-                    issues=[f"Embedding API error: {e}"],
-                    suggestions=[],
-                )
+                last_err = e
+                continue
+
+        if embeddings is None:
+            return FilterResult(
+                filter_name=self.name,
+                passed=True,
+                score=1.0,
+                threshold=self.threshold,
+                issues=[f"Embedding API error (skipped): {last_err}"],
+                suggestions=[],
+            )
 
         # Cosine similarity
         e1, e2 = embeddings[0], embeddings[1]

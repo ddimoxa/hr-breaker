@@ -17,8 +17,7 @@ classifiers = [
 dependencies = [
     "streamlit>=1.30",
     "pydantic>=2.0",
-    "pydantic-ai",
-    "google-genai",
+    "pydantic-ai-slim[openai]==1.48.0",
     "httpx",
     "beautifulsoup4",
     "scikit-learn>=1.0",
@@ -52,6 +51,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hr_breaker"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"templates" = "hr_breaker/templates"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

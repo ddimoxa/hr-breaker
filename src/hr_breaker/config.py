@@ -7,13 +7,15 @@ from typing import Any
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-from hr_breaker.config_manager import ConfigManager
+# Never override env vars already provided by the runtime (e.g. Docker env_file).
+load_dotenv(override=False)
 
-load_dotenv(override=True)
+# Optional local-only config file (disabled by default).
+# Server deployments should use env vars as the single source of truth.
+if os.getenv("HR_BREAKER_ENABLE_USER_CONFIG", "false").lower() in ("1", "true", "yes"):
+    from hr_breaker.config_manager import ConfigManager
 
-# Load persistent config into environment
-config_manager = ConfigManager()
-config_manager.apply_to_environ()
+    ConfigManager().apply_to_environ()
 
 
 def setup_logging() -> logging.Logger:
@@ -43,7 +45,7 @@ class Settings(BaseModel):
     gemini_thinking_budget: int | None = 8192
 
     # OpenAI / Compatible settings
-    llm_provider: str = "google"
+    llm_provider: str = "openai"
     openai_api_key: str = ""
     openai_base_url: str | None = None
     openai_model: str = "gpt-4o"
@@ -51,6 +53,8 @@ class Settings(BaseModel):
     openai_vision_model: str = "gpt-4o"
     openai_thinking_budget: int | None = None
     openai_provider_name: str = "openai"
+    openai_embedding_model: str = "text-embedding-3-small"
+    openai_embedding_dimensions: int | None = None
     cache_dir: Path = Path(".cache/resumes")
     output_dir: Path = Path("output")
     max_iterations: int = 5
@@ -101,7 +105,7 @@ def get_settings() -> Settings:
         gemini_pro_model=os.getenv("GEMINI_PRO_MODEL") or "gemini-3-pro-preview",
         gemini_flash_model=os.getenv("GEMINI_FLASH_MODEL") or "gemini-3-flash-preview",
         gemini_thinking_budget=thinking_budget,
-        llm_provider=os.getenv("LLM_PROVIDER", "google").lower(),
+        llm_provider=os.getenv("LLM_PROVIDER", "openai").lower(),
         openai_api_key=os.getenv("OPENAI_API_KEY", ""),
         openai_base_url=os.getenv("OPENAI_BASE_URL"),
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4o"),
@@ -109,6 +113,11 @@ def get_settings() -> Settings:
         openai_vision_model=os.getenv("OPENAI_VISION_MODEL", "gpt-4o"),
         openai_thinking_budget=int(os.getenv("OPENAI_THINKING_BUDGET", "0")) or None,
         openai_provider_name=os.getenv("OPENAI_PROVIDER_NAME", "openai"),
+        openai_embedding_model=os.getenv(
+            "OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"
+        ),
+        openai_embedding_dimensions=int(os.getenv("OPENAI_EMBEDDING_DIMENSIONS", "0"))
+        or None,
         fast_mode=os.getenv("HR_BREAKER_FAST_MODE", "true").lower()
         in ("true", "1", "yes"),
         # Scraper settings
@@ -155,6 +164,8 @@ def get_settings() -> Settings:
 def get_model_settings() -> dict[str, Any] | None:
     """Get GoogleModelSettings with thinking config if budget is set."""
     settings = get_settings()
+    if settings.llm_provider != "google":
+        return None
     if settings.gemini_thinking_budget is not None:
         return {
             "google_thinking_config": {

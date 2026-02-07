@@ -1,19 +1,16 @@
 from pydantic_ai.models import Model
-from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.profiles import ModelProfile
-from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.profiles.qwen import qwen_model_profile
 
 from hr_breaker.config import get_settings
+from hr_breaker.openai_keys import get_openai_api_keys
+from hr_breaker.openai_rotating_model import RotatingOpenAIModel
 
 
-def _get_openai_model(model_name: str) -> OpenAIModel:
-    """Helper to create OpenAI model with appropriate profile for Ollama."""
+def _get_openai_model(model_name: str) -> Model:
+    """Create an OpenAI-compatible model with API key rotation."""
     settings = get_settings()
-    provider = OpenAIProvider(
-        base_url=settings.openai_base_url,
-        api_key=settings.openai_api_key or "ollama",
-    )
+    api_keys = get_openai_api_keys()
 
     # Detect if we should use a specific profile
     profile = None
@@ -37,9 +34,16 @@ def _get_openai_model(model_name: str) -> OpenAIModel:
     elif "qwen" in model_name.lower():
         profile = qwen_model_profile(model_name)
 
-    return OpenAIModel(
+    # For local OpenAI-compatible servers (e.g. Ollama), allow empty keys.
+    if not api_keys and not settings.openai_base_url:
+        raise RuntimeError(
+            "No OpenAI API keys found. Set OPENAI_API_KEYS / OPENAI_API_KEY in env."
+        )
+
+    return RotatingOpenAIModel(
         model_name,
-        provider=provider,
+        api_keys=api_keys,
+        base_url=settings.openai_base_url,
         profile=profile,
     )
 
@@ -47,22 +51,16 @@ def _get_openai_model(model_name: str) -> OpenAIModel:
 def get_agent_model() -> str | Model:
     """Get the smart model for complex tasks (optimization)."""
     settings = get_settings()
-    if settings.llm_provider == "openai":
-        return _get_openai_model(settings.openai_model)
-    return f"google-gla:{settings.gemini_pro_model}"
+    return _get_openai_model(settings.openai_model)
 
 
 def get_flash_model() -> str | Model:
     """Get the fast model for simple tasks (name extraction, parsing)."""
     settings = get_settings()
-    if settings.llm_provider == "openai":
-        return _get_openai_model(settings.openai_flash_model)
-    return f"google-gla:{settings.gemini_flash_model}"
+    return _get_openai_model(settings.openai_flash_model)
 
 
 def get_vision_model() -> str | Model:
     """Get the vision model for visual reviews."""
     settings = get_settings()
-    if settings.llm_provider == "openai":
-        return _get_openai_model(settings.openai_vision_model)
-    return f"google-gla:{settings.gemini_flash_model}"
+    return _get_openai_model(settings.openai_vision_model)
