@@ -6,7 +6,6 @@ from hr_breaker.config import get_settings, logger
 from hr_breaker.filters.base import BaseFilter
 from hr_breaker.filters.registry import FilterRegistry
 from hr_breaker.models import FilterResult, JobPosting, OptimizedResume, ResumeSource
-from hr_breaker.services.length_estimator import estimate_content_length
 from hr_breaker.services.renderer import get_renderer, RenderError
 
 

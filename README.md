@@ -18,7 +18,7 @@ Resume optimization tool that transforms any resume into a job-specific, ATS-fri
 
 ## How It Works
 
-1. Upload resume in any text format (content source only)
+1. Upload resume in any supported format (PDF, LaTeX, markdown, txt)
 2. Provide job posting URL or text description
 3. LLM extracts content and generates optimized HTML resume
 4. System runs internal filters (ATS simulation, keyword matching, hallucination detection)
@@ -31,12 +31,58 @@ Resume optimization tool that transforms any resume into a job-specific, ATS-fri
 # Install
 uv sync
 
-# Configure
+# Configure (non-secret settings)
 cp .env.example .env
-# Edit .env and add your GOOGLE_API_KEY
 
-# Run web UI
+# Configure (secrets: OpenAI keys; this file is gitignored)
+cp .env.openai_keys.example .env.openai_keys
+# Edit .env.openai_keys and set one of:
+# - OPENAI_API_KEYS=sk-...,sk-...
+# - OPENAI_API_KEY=sk-...
+# - OPENAI_API_KEY_1=sk-... (+ OPENAI_API_KEY_2, ...)
+
+# Run Web UI
 uv run streamlit run src/hr_breaker/main.py
+```
+
+### PDF Rendering Prereqs (WeasyPrint)
+
+HR-Breaker renders HTML to PDF via WeasyPrint.
+
+- macOS (Homebrew):
+  - `brew install pango gdk-pixbuf libffi`
+  - Then run with: `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib uv run streamlit run src/hr_breaker/main.py`
+- Windows:
+  - Install GTK3 runtime from https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer/releases
+  - Ensure "Set up PATH environment variable" is checked during install.
+
+## Docker
+
+### Web UI (recommended)
+
+```bash
+# 1) Configure
+cp .env.example .env
+cp .env.openai_keys.example .env.openai_keys
+# Edit .env.openai_keys and set your OpenAI key(s)
+
+# 2) Build
+docker compose build
+
+# 3) Run
+docker compose up
+```
+
+Open http://localhost:8501
+
+### One-off run (no compose)
+
+```bash
+docker build -t hr-breaker .
+docker run --rm -p 8501:8501 --env-file .env --env-file .env.openai_keys \
+  -v "$(pwd)/output:/app/output" \
+  -v "$(pwd)/.cache:/app/.cache" \
+  hr-breaker
 ```
 
 ## Usage
@@ -54,7 +100,7 @@ Launch with `uv run streamlit run src/hr_breaker/main.py`
 
 ```bash
 # From URL
-uv run hr-breaker optimize resume.txt https://example.com/job
+uv run hr-breaker optimize resume.pdf https://example.com/job
 
 # From job description file
 uv run hr-breaker optimize resume.txt job.txt
@@ -77,7 +123,22 @@ uv run hr-breaker list
 
 ## Configuration
 
-Copy `.env.example` to `.env` and set `GOOGLE_API_KEY` (required). See `.env.example` for all available options.
+This branch uses OpenAI (or OpenAI-compatible) models.
+
+- Non-secret config: copy `.env.example` to `.env` and override what you need (models, base URL, etc.).
+- Secrets: copy `.env.openai_keys.example` to `.env.openai_keys` and set your OpenAI key(s).
+
+Supported key formats:
+
+- `OPENAI_API_KEYS="k1,k2,k3"` (comma/space/newline separated)
+- `OPENAI_API_KEY="k1"` (single key fallback)
+- `OPENAI_API_KEY_1`, `OPENAI_API_KEY_2`, ... (ordered)
+
+Optional UI auth (useful for deployments):
+
+- `HR_BREAKER_AUTH_ENABLED=true`
+- `HR_BREAKER_AUTH_USERNAME=...`
+- `HR_BREAKER_AUTH_PASSWORD=...`
 
 ---
 

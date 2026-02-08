@@ -1,13 +1,13 @@
 import logging
 from datetime import date
-from pathlib import Path
 
 from pydantic import BaseModel
-from pydantic_ai import Agent, BinaryContent
+from pydantic_ai import Agent, BinaryContent, PromptedOutput
 
 from hr_breaker.agents.combined_reviewer import pdf_to_image
 from hr_breaker.config import get_model_settings, get_settings
 from hr_breaker.filters.data_validator import validate_html
+from hr_breaker.provider import get_agent_model
 from hr_breaker.filters.keyword_matcher import check_keywords
 from hr_breaker.models import (
     IterationContext,
@@ -16,17 +16,15 @@ from hr_breaker.models import (
     ResumeSource,
 )
 from hr_breaker.services.length_estimator import estimate_content_length
-from hr_breaker.services.renderer import HTMLRenderer, RenderError
+from hr_breaker.services.renderer import HTMLRenderer, RenderError, get_template_dir
 from hr_breaker.utils import extract_text_from_html
 
 logger = logging.getLogger(__name__)
 
-TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
-
 
 def _load_resume_guide() -> str:
     """Load the HTML generation guide for the optimizer."""
-    guide_path = TEMPLATE_DIR / "resume_guide.md"
+    guide_path = get_template_dir() / "resume_guide.md"
     return guide_path.read_text()
 
 
@@ -130,10 +128,12 @@ def get_optimizer_agent(
         content_rules=content_rules, resume_guide=resume_guide
     )
     agent = Agent(
-        f"google-gla:{settings.gemini_pro_model}",
-        output_type=OptimizerResult,
-        system_prompt=system_prompt,
+        get_agent_model(),
+        output_type=PromptedOutput(OptimizerResult),
+        system_prompt=system_prompt
+        + "\nIMPORTANT: Return ONLY a JSON object matching the requested schema.",
         model_settings=get_model_settings(),
+        retries=5,
     )
 
     @agent.system_prompt

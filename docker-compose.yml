@@ -1,0 +1,11 @@
+services:
+  hr-breaker:
+    build: .
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+      - .env.openai_keys
+    volumes:
+      - ./output:/app/output
+      - ./.cache:/app/.cache

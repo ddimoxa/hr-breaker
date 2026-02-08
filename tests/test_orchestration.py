@@ -1,7 +1,7 @@
 """Tests for orchestration module."""
 
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import patch
 
 from hr_breaker.models import (
     FilterResult,

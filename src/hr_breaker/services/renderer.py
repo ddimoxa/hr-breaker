@@ -9,9 +9,6 @@ from jinja2 import Environment, FileSystemLoader
 
 from hr_breaker.models.resume_data import ResumeData, RenderResult
 
-# Template directory
-TEMPLATE_DIR = Path(__file__).parent.parent.parent.parent / "templates"
-
 
 def _setup_macos_library_path():
     """Set up library path for WeasyPrint on macOS with Homebrew."""
@@ -50,6 +47,40 @@ class BaseRenderer(ABC):
         pass
 
 
+def get_template_dir() -> Path:
+    """Resolve templates directory across source, container, and installed layouts."""
+    env_dir = os.getenv("HR_BREAKER_TEMPLATE_DIR")
+    module_path = Path(__file__).resolve()
+
+    candidates = []
+    if env_dir:
+        candidates.append(Path(env_dir).expanduser())
+
+    # Templates bundled into package: <site-packages>/hr_breaker/templates
+    candidates.append(module_path.parents[1] / "templates")
+    # Typical local/dev/container working directory
+    candidates.append(Path.cwd() / "templates")
+    # Source layout: <repo>/src/hr_breaker/services/renderer.py -> <repo>/templates
+    candidates.append(module_path.parents[3] / "templates")
+    # Docker image fallback
+    candidates.append(Path("/app/templates"))
+
+    checked: list[str] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        candidate = candidate.resolve()
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        checked.append(str(candidate))
+        if candidate.is_dir():
+            return candidate
+
+    raise RenderError(
+        "Templates directory not found. Checked: " + ", ".join(checked)
+    )
+
+
 class HTMLRenderer(BaseRenderer):
     """Render resume using HTML + WeasyPrint."""
 
@@ -57,13 +88,15 @@ class HTMLRenderer(BaseRenderer):
 
     def __init__(self):
         self._ensure_weasyprint()
+        self.template_dir = get_template_dir()
         self.env = Environment(
-            loader=FileSystemLoader(TEMPLATE_DIR),
+            loader=FileSystemLoader(self.template_dir),
             autoescape=True,
         )
         from weasyprint.text.fonts import FontConfiguration
+
         self.font_config = FontConfiguration()
-        self._wrapper_html = (TEMPLATE_DIR / "resume_wrapper.html").read_text()
+        self._wrapper_html = (self.template_dir / "resume_wrapper.html").read_text()
 
     @classmethod
     def _ensure_weasyprint(cls):
@@ -77,9 +110,18 @@ class HTMLRenderer(BaseRenderer):
         try:
             # Import WeasyPrint - this will fail if libs not found
             import weasyprint  # noqa: F401
+
             cls._weasyprint_imported = True
         except OSError as e:
-            if "libgobject" in str(e) or "libpango" in str(e):
+            if "libgobject" in str(e) or "libpango" in str(e) or "error 0x7e" in str(e):
+                if sys.platform == "win32":
+                    raise RenderError(
+                        "WeasyPrint libraries not found. Please install the GTK3 runtime:\n"
+                        "1. Download from: https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer/releases\n"
+                        "2. Install and ensure 'Set up PATH environment variable' is CHECKED.\n"
+                        "3. Restart your terminal."
+                    ) from e
+
                 raise RenderError(
                     "WeasyPrint libraries not found. On macOS, run:\n"
                     "  brew install pango gdk-pixbuf libffi\n"
@@ -101,7 +143,7 @@ class HTMLRenderer(BaseRenderer):
         html_content = self._wrapper_html.replace("{{BODY}}", html_body)
 
         # Render with WeasyPrint
-        html = HTML(string=html_content, base_url=str(TEMPLATE_DIR))
+        html = HTML(string=html_content, base_url=str(self.template_dir))
         doc = html.render(font_config=self.font_config)
         pdf_bytes = doc.write_pdf()
         page_count = len(doc.pages)
@@ -123,11 +165,13 @@ class HTMLRenderer(BaseRenderer):
         template = self.env.get_template("resume.html")
         html_content = template.render(resume=data)
 
-        html = HTML(string=html_content, base_url=str(TEMPLATE_DIR))
-        css_path = TEMPLATE_DIR / "resume.css"
+        html = HTML(string=html_content, base_url=str(self.template_dir))
+        css_path = self.template_dir / "resume.css"
         stylesheets = []
         if css_path.exists():
-            stylesheets.append(CSS(filename=str(css_path), font_config=self.font_config))
+            stylesheets.append(
+                CSS(filename=str(css_path), font_config=self.font_config)
+            )
 
         doc = html.render(stylesheets=stylesheets, font_config=self.font_config)
         pdf_bytes = doc.write_pdf()

@@ -3,8 +3,9 @@ from datetime import date
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
-from hr_breaker.config import get_model_settings, get_settings
+from hr_breaker.config import get_model_settings
 from hr_breaker.models import FilterResult, OptimizedResume, ResumeSource
+from hr_breaker.provider import get_agent_model
 
 
 class HallucinationResult(BaseModel):
@@ -86,10 +87,9 @@ BLOCK (score below 0.5):
 
 
 def get_hallucination_agent(no_shame: bool = False) -> Agent:
-    settings = get_settings()
     prompt = LENIENT_PROMPT if no_shame else STRICT_PROMPT
     agent = Agent(
-        f"google-gla:{settings.gemini_pro_model}",
+        get_agent_model(),
         output_type=HallucinationResult,
         system_prompt=prompt,
         model_settings=get_model_settings(),

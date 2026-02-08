@@ -9,7 +9,12 @@ from hr_breaker.agents import extract_name, parse_job_posting
 from hr_breaker.config import get_settings
 from hr_breaker.models import GeneratedPDF, ResumeSource
 from hr_breaker.orchestration import optimize_for_job
-from hr_breaker.services import PDFStorage, scrape_job_posting, ScrapingError, CloudflareBlockedError
+from hr_breaker.services import (
+    PDFStorage,
+    scrape_job_posting,
+    ScrapingError,
+    CloudflareBlockedError,
+)
 
 
 @click.group()
@@ -26,9 +31,15 @@ OUTPUT_DIR = Path("output")
 @click.argument("job_input")
 @click.option("--output", "-o", type=click.Path(path_type=Path), default=None)
 @click.option("--max-iterations", "-n", type=int, default=None)
-@click.option("--debug", "-d", is_flag=True, help="Save all iterations as PDFs to output/debug/")
-@click.option("--seq", "-s", is_flag=True, help="Run filters sequentially (default: parallel)")
-@click.option("--no-shame", is_flag=True, help="Lenient mode: allow aggressive content stretching")
+@click.option(
+    "--debug", "-d", is_flag=True, help="Save all iterations as PDFs to output/debug/"
+)
+@click.option(
+    "--seq", "-s", is_flag=True, help="Run filters sequentially (default: parallel)"
+)
+@click.option(
+    "--no-shame", is_flag=True, help="Lenient mode: allow aggressive content stretching"
+)
 def optimize(
     resume_path: Path,
     job_input: str,
@@ -44,10 +55,21 @@ def optimize(
     JOB_INPUT: URL or path to file with job description
     """
     settings = get_settings()
-    if not settings.google_api_key:
-        raise click.ClickException("GOOGLE_API_KEY not set in environment")
+    if settings.llm_provider == "google" and not settings.google_api_key:
+        raise click.ClickException(
+            "GOOGLE_API_KEY not set in environment (required for Google provider)"
+        )
+    if settings.llm_provider == "openai" and not settings.openai_api_key:
+        raise click.ClickException(
+            "OPENAI_API_KEY not set in environment (required for OpenAI provider)"
+        )
 
-    resume_content = resume_path.read_text()
+    from hr_breaker.services.pdf_parser import extract_text_from_pdf
+
+    if resume_path.suffix.lower() == ".pdf":
+        resume_content = extract_text_from_pdf(resume_path)
+    else:
+        resume_content = resume_path.read_text()
 
     # Get job text (sync - may need user interaction for Cloudflare)
     job_text = _get_job_text(job_input)
@@ -57,7 +79,10 @@ def optimize(
 
     def on_iteration(i, optimized, validation):
         status = "PASS" if validation.passed else "FAIL"
-        scores = ", ".join(f"{r.filter_name}:{r.score:.2f}/{r.threshold:.2f}" for r in validation.results)
+        scores = ", ".join(
+            f"{r.filter_name}:{r.score:.2f}/{r.threshold:.2f}"
+            for r in validation.results
+        )
         click.echo(f"  Iteration {i + 1}: {status} [{scores}]")
 
         # Save intermediate PDF in debug mode
@@ -74,7 +99,7 @@ def optimize(
                 debug_pdf.write_bytes(optimized.pdf_bytes)
                 click.echo(f"    Debug: saved {debug_pdf}")
             else:
-                click.echo(f"    Debug: no PDF (render failed)")
+                click.echo("    Debug: no PDF (render failed)")
 
     # Run all async work in single event loop
     async def run_optimization():
@@ -98,9 +123,14 @@ def optimize(
             first_name=first_name,
             last_name=last_name,
         )
+        parallel_mode = not seq if seq else settings.fast_mode
         optimized, validation, _ = await optimize_for_job(
-            source, max_iterations=max_iterations, on_iteration=on_iteration, job=job,
-            parallel=not seq, no_shame=no_shame
+            source,
+            max_iterations=max_iterations,
+            on_iteration=on_iteration,
+            job=job,
+            parallel=parallel_mode,
+            no_shame=no_shame,
         )
         return first_name, last_name, source, optimized, validation, job
 
@@ -114,7 +144,12 @@ def optimize(
     # Save final PDF (reuse bytes from last iteration)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     if output is None:
-        output = OUTPUT_DIR / pdf_storage.generate_path(first_name, last_name, job.company, job.title).name
+        output = (
+            OUTPUT_DIR
+            / pdf_storage.generate_path(
+                first_name, last_name, job.company, job.title
+            ).name
+        )
 
     if not optimized.pdf_bytes:
         raise click.ClickException("No PDF generated (render failed)")
@@ -163,7 +198,7 @@ def _get_job_text(job_input: str) -> str:
         try:
             return scrape_job_posting(job_input)
         except CloudflareBlockedError:
-            click.echo(f"Site has bot protection. Opening in browser...")
+            click.echo("Site has bot protection. Opening in browser...")
             click.launch(job_input)
             click.echo("Please copy the job description and paste below.")
             click.echo("(Press Enter twice when done)")

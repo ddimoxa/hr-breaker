@@ -2,14 +2,13 @@
 
 import pytest
 import httpx
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 from hr_breaker.services.job_scraper import (
     scrape_job_posting,
     CloudflareBlockedError,
     ScrapingError,
 )
-from hr_breaker.services.scrapers.base import BaseScraper
 from hr_breaker.services.scrapers.httpx_scraper import HttpxScraper
 
 

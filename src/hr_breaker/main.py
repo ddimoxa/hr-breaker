@@ -1,10 +1,25 @@
 import asyncio
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import nest_asyncio
 import streamlit as st
+
+from hr_breaker.auth import logout_button, require_auth
+from hr_breaker.agents import extract_name, parse_job_posting
+from hr_breaker.config import get_settings
+from hr_breaker.models import GeneratedPDF, ResumeSource, ValidationResult
+from hr_breaker.orchestration import optimize_for_job
+from hr_breaker.openai_keys import get_openai_api_keys, mask_keys
+from hr_breaker.services import (
+    PDFStorage,
+    ResumeCache,
+    scrape_job_posting,
+    CloudflareBlockedError,
+)
+from hr_breaker.services.pdf_parser import extract_text_from_pdf
 
 nest_asyncio.apply()
 
@@ -13,19 +28,13 @@ if "event_loop" not in st.session_state:
     st.session_state.event_loop = asyncio.new_event_loop()
 asyncio.set_event_loop(st.session_state.event_loop)
 
-from hr_breaker.agents import extract_name, parse_job_posting
-from hr_breaker.config import get_settings
-from hr_breaker.models import GeneratedPDF, ResumeSource, ValidationResult
-from hr_breaker.orchestration import optimize_for_job
-from hr_breaker.services import PDFStorage, ResumeCache, scrape_job_posting, CloudflareBlockedError
-from hr_breaker.services.pdf_parser import extract_text_from_pdf
-
 # Initialize services
 cache = ResumeCache()
 pdf_storage = PDFStorage()
 settings = get_settings()
 
 st.set_page_config(page_title="HR-Breaker", page_icon="*", layout="wide")
+require_auth()
 
 
 def run_async(coro):
@@ -56,7 +65,9 @@ def display_filter_results(validation: ValidationResult):
     """Display filter results in UI."""
     for result in validation.results:
         icon = "[OK]" if result.passed else "[X]"
-        with st.expander(f"{icon} {result.filter_name} - Score: {result.score:.2f}/{result.threshold:.2f}"):
+        with st.expander(
+            f"{icon} {result.filter_name} - Score: {result.score:.2f}/{result.threshold:.2f}"
+        ):
             if result.issues:
                 st.write("**Issues:**")
                 for issue in result.issues:
@@ -70,11 +81,45 @@ def display_filter_results(validation: ValidationResult):
 # Sidebar - Options & History
 with st.sidebar:
     # Options section
+    logout_button()
+
+    with st.expander("Model Configuration", expanded=False):
+        st.caption("Config is read-only in UI. Use env vars (.env files) and restart the container to apply changes.")
+
+        st.text_input("Provider", value="openai (only)", disabled=True)
+
+        base_url_label = settings.openai_base_url or "(default OpenAI base_url)"
+        st.text_input(
+            "Base URL",
+            value=base_url_label,
+            disabled=True,
+            help="For local OpenAI-compatible servers set OPENAI_BASE_URL (e.g. http://localhost:11434/v1)",
+        )
+
+        st.text_input("Optimizer Model", value=settings.openai_model, disabled=True)
+        st.text_input("Fast/Flash Model", value=settings.openai_flash_model, disabled=True)
+        st.text_input("Vision Model", value=settings.openai_vision_model, disabled=True)
+
+        keys = get_openai_api_keys()
+        if keys:
+            st.success(f"OpenAI keys loaded: {len(keys)} (masked)")
+            st.code("\n".join(mask_keys(keys)))
+        else:
+            st.error("No OpenAI keys configured. Set OPENAI_API_KEYS / OPENAI_API_KEY in .env.openai_keys.")
+
     st.markdown("**Options**")
-    sequential_mode = st.checkbox("Sequential", value=False, help="Run filters sequentially with early exit")
+    sequential_mode = st.checkbox(
+        "Sequential", value=False, help="Run filters sequentially with early exit"
+    )
     debug_mode = st.checkbox("Debug", value=False, help="Save each iteration PDF")
-    no_shame_mode = st.checkbox("No Shame", value=False, help="Lenient mode: allow aggressive content stretching")
-    max_iterations = st.number_input("Max iterations", min_value=1, max_value=10, value=settings.max_iterations)
+    no_shame_mode = st.checkbox(
+        "No Shame",
+        value=False,
+        help="Lenient mode: allow aggressive content stretching",
+    )
+    max_iterations = st.number_input(
+        "Max iterations", min_value=1, max_value=10, value=settings.max_iterations
+    )
 
     st.divider()
 
@@ -114,14 +159,17 @@ with st.sidebar:
         st.caption("No PDFs yet")
 
     st.divider()
-    if not settings.google_api_key:
-        st.warning("Set GOOGLE_API_KEY in .env")
+    # OpenAI-only mode: Google/Gemini is not used.
 
 # Main content
 st.markdown("### HR-Breaker")
 
 # Use cached resume if available (but not if user explicitly cleared it)
-if "source_resume" not in st.session_state and not st.session_state.get("resume_cleared") and cache.list_all():
+if (
+    "source_resume" not in st.session_state
+    and not st.session_state.get("resume_cleared")
+    and cache.list_all()
+):
     cached_resumes = cache.list_all()
     if cached_resumes:
         st.session_state["source_resume"] = cached_resumes[-1]
@@ -146,17 +194,27 @@ with col_resume:
             if st.button("Change", key="clear_resume"):
                 st.session_state.pop("source_resume", None)
                 st.session_state.pop("last_result", None)
-                st.session_state["resume_uploader_key"] = st.session_state.get("resume_uploader_key", 0) + 1
+                st.session_state["resume_uploader_key"] = (
+                    st.session_state.get("resume_uploader_key", 0) + 1
+                )
                 st.session_state["resume_cleared"] = True
                 st.rerun()
         with st.expander("Preview", expanded=False):
             st.text(src.content)
     else:
-        resume_method = st.radio("Resume input method", ["Upload", "Paste"], horizontal=True, key="resume_method", label_visibility="collapsed")
+        resume_method = st.radio(
+            "Resume input method",
+            ["Upload", "Paste"],
+            horizontal=True,
+            key="resume_method",
+            label_visibility="collapsed",
+        )
 
         resume_content = None
         if resume_method == "Upload":
-            uploader_key = f"resume_uploader_{st.session_state.get('resume_uploader_key', 0)}"
+            uploader_key = (
+                f"resume_uploader_{st.session_state.get('resume_uploader_key', 0)}"
+            )
             uploaded_file = st.file_uploader(
                 "Upload (.tex, .md, .txt, .pdf)",
                 type=["tex", "md", "txt", "pdf"],
@@ -165,21 +223,37 @@ with col_resume:
             )
             if uploaded_file:
                 if uploaded_file.name.lower().endswith(".pdf"):
-                    temp_path = Path(f"/tmp/{uploaded_file.name}")
-                    temp_path.write_bytes(uploaded_file.read())
-                    resume_content = extract_text_from_pdf(temp_path)
-                    temp_path.unlink()
+                    with tempfile.NamedTemporaryFile(
+                        delete=False, suffix=".pdf"
+                    ) as tmp_file:
+                        tmp_file.write(uploaded_file.read())
+                        temp_path = Path(tmp_file.name)
+
+                    try:
+                        resume_content = extract_text_from_pdf(temp_path)
+                    finally:
+                        try:
+                            temp_path.unlink()
+                        except Exception:
+                            pass
                 else:
                     resume_content = uploaded_file.read().decode("utf-8")
         else:
-            pasted_resume = st.text_area("Paste resume", height=100, label_visibility="collapsed", placeholder="Paste resume text...")
+            pasted_resume = st.text_area(
+                "Paste resume",
+                height=100,
+                label_visibility="collapsed",
+                placeholder="Paste resume text...",
+            )
             if pasted_resume:
                 resume_content = pasted_resume
 
         if resume_content:
             with st.spinner("Extracting name..."):
                 first_name, last_name = cached_extract_name(resume_content)
-            source = ResumeSource(content=resume_content, first_name=first_name, last_name=last_name)
+            source = ResumeSource(
+                content=resume_content, first_name=first_name, last_name=last_name
+            )
             cache.put(source)
             st.session_state["source_resume"] = source
             st.session_state.pop("resume_cleared", None)
@@ -193,7 +267,11 @@ with col_job:
 
     # If job loaded, show compact info; else show input
     if has_job:
-        preview = job_text[:80].replace('\n', ' ') + "..." if len(job_text) > 80 else job_text.replace('\n', ' ')
+        preview = (
+            job_text[:80].replace("\n", " ") + "..."
+            if len(job_text) > 80
+            else job_text.replace("\n", " ")
+        )
         c1, c2 = st.columns([4, 1])
         with c1:
             st.success(f"✓ {preview}")
@@ -206,10 +284,18 @@ with col_job:
         with st.expander("Preview", expanded=False):
             st.text(job_text)
     else:
-        job_input_method = st.radio("Job input method", ["URL", "Paste"], horizontal=True, key="job_method", label_visibility="collapsed")
+        job_input_method = st.radio(
+            "Job input method",
+            ["URL", "Paste"],
+            horizontal=True,
+            key="job_method",
+            label_visibility="collapsed",
+        )
 
         if job_input_method == "URL":
-            job_url = st.text_input("Job URL", label_visibility="collapsed", placeholder="https://...")
+            job_url = st.text_input(
+                "Job URL", label_visibility="collapsed", placeholder="https://..."
+            )
 
             # Auto-fetch when URL changes
             if job_url and job_url != st.session_state.get("last_job_url"):
@@ -227,9 +313,16 @@ with col_job:
                         st.error(f"Failed: {e}")
 
             if st.session_state.get("scrape_failed_url"):
-                st.markdown(f"[Open in browser]({st.session_state['scrape_failed_url']})")
+                st.markdown(
+                    f"[Open in browser]({st.session_state['scrape_failed_url']})"
+                )
         else:
-            pasted_job = st.text_area("Paste job", height=100, label_visibility="collapsed", placeholder="Paste job posting...")
+            pasted_job = st.text_area(
+                "Paste job",
+                height=100,
+                label_visibility="collapsed",
+                placeholder="Paste job posting...",
+            )
             if pasted_job:
                 st.session_state["job_text"] = pasted_job
                 st.session_state.pop("scrape_failed_url", None)
@@ -245,7 +338,9 @@ elif not has_job:
     btn_help = "Need job posting"
 elif is_running:
     btn_help = "Optimization in progress"
-clicked = st.button("🚀 Optimize", disabled=not can_optimize, use_container_width=True, help=btn_help)
+clicked = st.button(
+    "🚀 Optimize", disabled=not can_optimize, use_container_width=True, help=btn_help
+)
 
 if clicked:
     source = st.session_state["source_resume"]
@@ -265,6 +360,7 @@ if clicked:
         iteration_results = []
 
         with st.status("Optimizing resume...", expanded=True) as status_container:
+
             def on_iteration(i, opt, val):
                 iteration_results.append((i, opt, val))
                 status_container.update(label=f"Iteration {i + 1}/{max_iterations}")
@@ -275,7 +371,9 @@ if clicked:
                     if opt.html:
                         (debug_dir / f"iteration_{i + 1}.html").write_text(opt.html)
                     if opt.pdf_bytes:
-                        (debug_dir / f"iteration_{i + 1}.pdf").write_bytes(opt.pdf_bytes)
+                        (debug_dir / f"iteration_{i + 1}.pdf").write_bytes(
+                            opt.pdf_bytes
+                        )
 
             optimized, validation, job = run_async(
                 optimize_for_job(
@@ -348,7 +446,9 @@ if "last_result" in st.session_state:
     else:
         passed = [r.filter_name for r in validation.results if r.passed]
         failed = [r.filter_name for r in validation.results if not r.passed]
-        st.warning(f"Max iterations ({len(passed)}/{len(validation.results)} passed). Failed: {', '.join(failed)}")
+        st.warning(
+            f"Max iterations ({len(passed)}/{len(validation.results)} passed). Failed: {', '.join(failed)}"
+        )
 
     if debug_dir:
         st.info(f"Debug output: {debug_dir}")

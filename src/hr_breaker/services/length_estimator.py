@@ -3,7 +3,7 @@
 import re
 from dataclasses import dataclass
 
-from hr_breaker.config import get_settings, logger
+from hr_breaker.config import get_settings
 
 __all__ = [
     "LengthEstimate",

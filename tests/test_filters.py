@@ -1,6 +1,6 @@
 import pytest
 
-from hr_breaker.filters import HallucinationChecker, FilterRegistry, KeywordMatcher
+from hr_breaker.filters import FilterRegistry, KeywordMatcher
 from hr_breaker.models import JobPosting, OptimizedResume, ResumeSource
 
 

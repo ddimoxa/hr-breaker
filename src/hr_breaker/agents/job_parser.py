@@ -1,9 +1,9 @@
-from functools import lru_cache
+from pydantic_ai import Agent, PromptedOutput
 
-from pydantic_ai import Agent
-
-from hr_breaker.config import get_model_settings, get_settings
+from hr_breaker.config import get_model_settings
 from hr_breaker.models import JobPosting
+from hr_breaker.provider import get_flash_model
+
 
 SYSTEM_PROMPT = """You are a job posting parser. Extract structured information from job postings.
 
@@ -14,18 +14,27 @@ Extract:
 - keywords: Technical keywords, tools, technologies mentioned
 - description: Brief summary of the role
 
+EXAMPLE JSON OUTPUT:
+{
+  "title": "Software Engineer",
+  "company": "Google",
+  "requirements": ["Python", "3+ years experience"],
+  "keywords": ["Python", "FastAPI", "Docker"],
+  "description": "Building great software."
+}
+
 Be thorough in extracting keywords - include all technologies, tools, frameworks, methodologies mentioned.
 """
 
 
-@lru_cache
 def get_job_parser_agent() -> Agent:
-    settings = get_settings()
     return Agent(
-        f"google-gla:{settings.gemini_flash_model}",
-        output_type=JobPosting,
-        system_prompt=SYSTEM_PROMPT,
+        get_flash_model(),
+        output_type=PromptedOutput(JobPosting),
+        system_prompt=SYSTEM_PROMPT
+        + "\nIMPORTANT: Return ONLY a JSON object matching the requested schema.",
         model_settings=get_model_settings(),
+        retries=5,
     )
 
 
